@@ -20,7 +20,7 @@ What good looks like:
 - The day: build and deploy 12:00 to 20:00. An incident arrives around 15:30, unannounced. At 20:00 we deliver a public repo, the deployed entrypoint and a 2-minute video. The entrypoint stays reachable until demo day ends.
 - Budget: one OpenRouter key with US$50: US$45 for the day and US$5 locked for the battery, which cannot be spent during the day. Cost per case times the number of battery cases must fit in US$5. We write code with Claude Code; the key is only for our agent.
 - Deployment: a long-running server, not serverless functions. A task runs up to 5 minutes in the background and holds an open connection.
-- Facts checked on October 10, not a choice of library (verify when installing): the Node VNC libraries `vnc-rfb-client` and `rfb2` connect over TCP only, so a websocket needs a small local bridge. `vnc-rfb-client` logs in with a cipher that Node 22 disables by default; `rfb2` ships its own.
+- Facts checked on October 10, not a choice of library (verify when installing): `vnc-rfb-client` connects over TCP only, so a websocket needs a small local bridge, and it logs in with a cipher (DES) that Node disables by default since OpenSSL 3. `rfb2` accepts any stream (`params.stream`), so a websocket can feed it with no bridge, and it ships its own DES. We build our own client; `rfb2` with a stream adapter is the fallback.
 - Model plan (default and fallback, with prices checked today): filled after the pointing test.
 
 ## Rules of the agent we build
