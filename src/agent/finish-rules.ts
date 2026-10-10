@@ -16,7 +16,9 @@ export function checkFinish(action: Finish, ledger: RowLedger, guard: CommitGuar
   if (pending) return { accepted: false, reason: `the commit on "${pending}" is not verified; read the stored record` };
   const hasAnswer = action.answer !== undefined && action.answer.trim() !== '';
   // Run 5: rows were read for a question, then terminada came with no count and no answer, and was accepted.
-  if (!action.count && !hasAnswer && ledger.hasRows) {
+  // Only a task that committed nothing is a pure question; a create or edit may read rows to verify (run 6, E1).
+  const isQuestionWithoutAnswer = !action.count && !hasAnswer && ledger.hasRows && !guard.hasCommitted;
+  if (isQuestionWithoutAnswer) {
     return { accepted: false, reason: 'rows were read with read_rows but the finish has no count and no answer' };
   }
   if (!action.count) {

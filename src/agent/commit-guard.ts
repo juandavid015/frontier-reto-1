@@ -45,6 +45,10 @@ export class CommitGuard {
     this.#unverified = undefined;
   }
 
+  get hasCommitted(): boolean {
+    return this.#committed.size > 0;
+  }
+
   get pendingVerification(): string | undefined {
     return this.#unverified?.record;
   }

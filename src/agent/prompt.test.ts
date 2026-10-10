@@ -22,8 +22,11 @@ test('commits: never repeated, verified by reading the stored record (incident F
 });
 
 test('the time left is shown only in the last minute (validation 1: early give-ups)', () => {
-  assert.doesNotMatch(stepPrompt('t', [], 3, 200), /seconds/);
-  assert.match(stepPrompt('t', [], 30, 45), /About 45 seconds are left/);
+  assert.doesNotMatch(stepPrompt('t', { history: [], notes: [], stepNumber: 3, secondsLeft: 200 }), /seconds/);
+  assert.match(
+    stepPrompt('t', { history: [], notes: [], stepNumber: 30, secondsLeft: 45 }),
+    /About 45 seconds are left/,
+  );
 });
 
 test('counting: the end of the list must be proven (run 5)', () => {

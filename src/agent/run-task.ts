@@ -1,10 +1,12 @@
 import { Desktop, type ActionResult } from '../desktop/desktop.ts';
 import { encodePng } from '../image/png.ts';
-import { redact } from '../secrets/redact.ts';
+import { redact, redactKeyLikeTokens } from '../secrets/redact.ts';
 import type { Action, StepReply } from './actions.ts';
 import { CommitGuard } from './commit-guard.ts';
 import { agentConfig } from './config.ts';
 import { checkFinish, type TaskEnd } from './finish-rules.ts';
+import { resolveIdentity, type Candidate } from './identity.ts';
+import { Notes } from './notes.ts';
 import { RowLedger } from './row-ledger.ts';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { requestStep, type ModelUsage } from './model-client.ts';
@@ -37,7 +39,14 @@ export type TaskOutcome = {
 type Finish = Extract<Action, { kind: 'finish' }>;
 type LoopEnd = TaskEnd;
 // What plain code remembers during one task, to enforce the rules the model might forget.
-type TaskMemory = { ledger: RowLedger; guard: CommitGuard; refusedFinishes: number; clickedSinceLastRead: boolean };
+type TaskMemory = {
+  ledger: RowLedger;
+  guard: CommitGuard;
+  notes: Notes;
+  identity: Candidate | undefined;
+  refusedFinishes: number;
+  clickedSinceLastRead: boolean;
+};
 
 export async function runTask(input: TaskInput): Promise<TaskOutcome> {
   const startedAt = performance.now();
@@ -58,7 +67,8 @@ export async function runTask(input: TaskInput): Promise<TaskOutcome> {
     desktop?.close();
   }
 
-  const resumen = redact(buildSummary(end), secrets);
+  // Our own secrets are always removed, and anything shaped like a key the model may have copied from the screen.
+  const resumen = redact(redactKeyLikeTokens(buildSummary(end)), secrets);
   const outcome: TaskOutcome = {
     estado: end.estado,
     resumen,
@@ -98,6 +108,8 @@ async function agentLoop(
   const memory: TaskMemory = {
     ledger: new RowLedger(),
     guard: new CommitGuard(),
+    notes: new Notes(),
+    identity: undefined,
     refusedFinishes: 0,
     clickedSinceLastRead: false,
   };
@@ -113,13 +125,19 @@ async function agentLoop(
     const frame = desktop.screenshot();
     await trace.screenshot(`step-${String(step).padStart(2, '0')}`, frame);
     const secondsLeft = Math.round((agentConfig.taskDeadlineMs - (performance.now() - startedAt)) / 1000);
-    const text = stepPrompt(input.task, history.slice(-agentConfig.historySteps), step, secondsLeft);
+    const text = stepPrompt(input.task, {
+      history: history.slice(-agentConfig.historySteps),
+      notes: memory.notes.list(),
+      stepNumber: step,
+      secondsLeft,
+    });
     const reply = await decide(input, system, text, encodePng(frame), trace, counters, step);
+    memory.notes.add(reply.remember);
     const { action } = reply;
     if (action.kind === 'finish') {
       const decision = checkFinish(action, memory.ledger, memory.guard);
       await trace.event('finish', { step, action, decision });
-      if (decision.accepted) return decision.end;
+      if (decision.accepted) return nameTheRecord(decision.end, memory.identity);
       memory.refusedFinishes++;
       if (memory.refusedFinishes >= agentConfig.maxRefusedFinishes) {
         return {
@@ -190,6 +208,13 @@ async function act(desktop: Desktop, action: Exclude<Action, Finish>, memory: Ta
         const evidence = memory.ledger.endOfListEvidence(action.table) ?? 'not proven yet';
         return `recorded ${action.rows.length} rows (${added} new); "${action.table}" has ${total} distinct rows; end of list: ${evidence}`;
       }
+      case 'resolve_identity': {
+        const decision = resolveIdentity(action);
+        if (!decision.chosen) return `no record chosen: ${decision.reason}. Do not act on any record.`;
+        memory.identity = decision.chosen;
+        const { full_name: name, record_id: id } = decision.chosen;
+        return `chosen by ${decision.how}: ${name} (${id}). Act only on this record.`;
+      }
       case 'verify_saved':
         memory.guard.markVerified();
         return 'verification recorded';
@@ -222,6 +247,12 @@ function buildSummary(end: LoopEnd): string {
   return `respuesta: ${end.answer!.trim()}\n${end.summary}`;
 }
 
+// The brief scores what the summary says: when code chose the record, the summary names it in full.
+function nameTheRecord(end: TaskEnd, identity: Candidate | undefined): TaskEnd {
+  if (end.estado !== 'terminada' || !identity) return end;
+  return { ...end, summary: `${end.summary} Record used: ${identity.full_name} (${identity.record_id}).` };
+}
+
 function describeAction(action: Exclude<Action, Finish>): string {
   switch (action.kind) {
     case 'click':
@@ -230,6 +261,8 @@ function describeAction(action: Exclude<Action, Finish>): string {
       return `read_rows "${action.table}" (${action.rows.length} rows)`;
     case 'verify_saved':
       return `verify_saved: ${action.evidence}`;
+    case 'resolve_identity':
+      return `resolve_identity "${action.name}" among ${action.candidates.length} candidates`;
     case 'type':
       return `${action.replace ? 'replace with' : 'type'} ${JSON.stringify(action.text)}`;
     case 'keys':

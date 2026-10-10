@@ -59,6 +59,23 @@ export const ActionSchema = z.discriminatedUnion('kind', [
       .describe('The total number of records the application itself shows for this list, if it shows one'),
   }),
   z.object({
+    kind: z.literal('resolve_identity'),
+    name: z.string().min(1).describe('The name exactly as the task writes it'),
+    other_identifiers: z
+      .array(z.string())
+      .describe('Any other identifier the task gives for the same record (document number, id); empty if none'),
+    candidates: z
+      .array(
+        z.object({
+          record_id: z.string().min(1),
+          full_name: z.string().min(1),
+          identifiers: z.array(z.string()).describe('Its document numbers or other ids shown, if any'),
+        }),
+      )
+      .describe('Every record the search result shows, copied exactly'),
+    list_complete: z.boolean().describe('true only if you saw the whole result list (no more pages or scrolling)'),
+  }),
+  z.object({
     kind: z.literal('verify_saved'),
     evidence: z.string().min(1).describe('Where you read the stored record and what it shows, e.g. the list row'),
   }),
@@ -92,6 +109,10 @@ export const StepReplySchema = z.object({
   // Only the trace reads these two, so a reply without them still counts if its action is valid.
   observation: z.string().default('').describe('What the current screen shows that matters for the task'),
   plan: z.string().default('').describe('Why this action is the next step'),
+  remember: z
+    .array(z.string())
+    .default([])
+    .describe('Facts read on this screen that later steps will need (an id, a date, an amount, a name), if any'),
   action: z.preprocess(parseIfJsonString, ActionSchema),
 });
 

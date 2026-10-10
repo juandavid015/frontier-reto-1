@@ -16,7 +16,12 @@ test('an action sent as a JSON string is parsed (run 4, E3)', () => {
 });
 
 test('a reply without observation or plan keeps its valid action', () => {
-  assert.deepEqual(StepReplySchema.parse({ action: click }), { observation: '', plan: '', action: click });
+  assert.deepEqual(StepReplySchema.parse({ action: click }), {
+    observation: '',
+    plan: '',
+    remember: [],
+    action: click,
+  });
 });
 
 test('an action that is neither an object nor valid JSON is still rejected', () => {

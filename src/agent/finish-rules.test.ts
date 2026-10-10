@@ -28,6 +28,15 @@ test('terminada after reading rows, with no count and no answer, is refused (run
   assert.equal(decision.accepted, false);
 });
 
+test('a create that read rows to verify its save is accepted without an answer (run 6, E1)', () => {
+  const ledger = new RowLedger();
+  ledger.record('clientes', rows(1, 1));
+  const guard = new CommitGuard();
+  guard.recordCommit('new customer Tienda Sol', 10, 10);
+  guard.markVerified();
+  assert.equal(checkFinish(done(), ledger, guard).accepted, true);
+});
+
 test('terminada with no rows read and no answer is accepted (a create or edit task)', () => {
   assert.equal(checkFinish(done(), new RowLedger(), new CommitGuard()).accepted, true);
 });
