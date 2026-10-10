@@ -1,6 +1,7 @@
 // Eval runner: for each case, reset the desktop, run the agent, ask the organizers' /__check about the app state,
 // then check our own estado and summary the way the brief scores them. Prints and saves the numbers per task type.
-// Usage: pnpm eval [cases folder, default pruebas] [case id filter, e.g. E3]
+// Usage: pnpm eval [--model=provider/name] [cases folder, default pruebas] [case id filter, e.g. E3]
+// Without --model, the model in src/agent/config.ts is used.
 
 import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -39,15 +40,15 @@ type CaseResult = {
 };
 
 await runProbe(async () => {
-  const [folder = 'pruebas', filter] = process.argv.slice(2);
+  const args = process.argv.slice(2);
+  const model = args.find((arg) => arg.startsWith('--model='))?.slice('--model='.length) ?? agentConfig.model;
+  const [folder = 'pruebas', filter] = args.filter((arg) => !arg.startsWith('--'));
   const env = requireEnv(['DESKTOP_WS_URL', 'DESKTOP_PASSWORD', 'DESKTOP_TOKEN', 'OPENROUTER_API_KEY']);
   const baseUrl = httpBaseUrl(env.DESKTOP_WS_URL);
   const cases = (await loadCases(folder)).filter((evalCase) => !filter || evalCase.id === filter);
   const runDirectory = path.join('artifacts', 'eval', new Date().toISOString().replaceAll(':', '-'));
   await mkdir(runDirectory, { recursive: true });
-  console.log(
-    `Model ${agentConfig.model}, ${cases.length} cases, max ${agentConfig.maxSteps} steps. Traces: ${runDirectory}`,
-  );
+  console.log(`Model ${model}, ${cases.length} cases, max ${agentConfig.maxSteps} steps. Traces: ${runDirectory}`);
 
   const results: CaseResult[] = [];
   for (const evalCase of cases) {
@@ -58,6 +59,7 @@ await runProbe(async () => {
       desktop: { url: env.DESKTOP_WS_URL, password: env.DESKTOP_PASSWORD },
       apiKey: env.OPENROUTER_API_KEY,
       traceRoot: runDirectory,
+      model,
     });
     const appCheck = await checkApp(baseUrl, env.DESKTOP_TOKEN, evalCase);
     const result = scoreCase(evalCase, outcome, appCheck);
