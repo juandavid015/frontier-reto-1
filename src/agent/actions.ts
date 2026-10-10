@@ -70,10 +70,22 @@ export const ActionSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+// Models sometimes send a nested object as a JSON string (run 4, E3: action arrived as "{\"kind\": ...}"). Parsing it
+// here keeps a correct action from being thrown away; anything that is not valid JSON is left for the schema to reject.
+function parseIfJsonString(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
 export const StepReplySchema = z.object({
-  observation: z.string().describe('What the current screen shows that matters for the task'),
-  plan: z.string().describe('Why this action is the next step'),
-  action: ActionSchema,
+  // Only the trace reads these two, so a reply without them still counts if its action is valid.
+  observation: z.string().default('').describe('What the current screen shows that matters for the task'),
+  plan: z.string().default('').describe('Why this action is the next step'),
+  action: z.preprocess(parseIfJsonString, ActionSchema),
 });
 
 export type Action = z.infer<typeof ActionSchema>;

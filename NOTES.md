@@ -66,6 +66,11 @@
 - **`GET /health` answers 200 with or without the token.** The brief says their calls carry the token, not that we
   must reject calls without it; /health exposes nothing. The task routes require it. (`src/server/http-server.ts`)
 - **`POST /tasks` answers 200** with `{"task_id": "..."}`; the brief names no status code.
+- **Haiku 5.5 is the default model** (Oct 10, 16:30): same pass rate as Sonnet 5.5 on the practice cases, no false
+  success, 1/25 of the cost. (`src/agent/config.ts`)
+- **Commits: never save the same record twice; a verifying read between two saves.** One save per task was too
+  strict: a task may ask for two changes. The "no visible change" signal stays for exploring clicks and is dropped
+  only for commits. (`src/agent/commit-guard.ts`)
 - **The 4:30 clock is the real limit, not a step count.** The step cap is 100, only a runaway guard: at 30, a
   correct task finished on step 29. The prompt tells the model the seconds left. (`src/agent/config.ts`)
 
@@ -85,7 +90,7 @@ relative date, never from the system clock. Cases, with the app showing Tuesday 
 | Month that ends the 30th | `noviembre de 2026`             | 2026-11-01 to 2026-11-30, never the 31st          |
 | Leap February            | `febrero de 2028`               | 2028-02-01 to 2028-02-29                          |
 
-To decide (proposals):
+**Provisional decisions** (Juan David accepted the proposals for now, Oct 10; review after the incident run):
 
 - A date that reads both ways, like `05/10/2026`: day-first, unless another date on the same screen has a first part
   above 12. The app is Colombian (es-CO writes day-first).
