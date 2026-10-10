@@ -1,0 +1,23 @@
+{
+  "name": "frontier-reto-1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "An agent that operates apps with no API through a remote desktop (VNC).",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "check": "npm run format:check && npm run typecheck && npm test",
+    "probe:screenshot": "node --env-file-if-exists=.env scripts/probe-screenshot.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2"
+  }
+}
