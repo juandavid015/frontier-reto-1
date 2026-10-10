@@ -297,3 +297,78 @@ Total 4/5, **0 false successes** (run 3: 1), 0 changes outside the task, $0.044.
   Haiku sent `action` as a JSON string, then on the retry left out `observation` and `plan`. Stop reason
   `tool_calls`, so not a cut reply. Fixed in `816642c`: a stringified action is parsed, and the two trace-only
   fields default to empty. The counting itself is still unproven on the live app.
+
+### Run 5, before the second validation (Oct 10, 17:27, commit `f164d03`, Haiku 5.5)
+
+E1 create pass (23 steps, 83 s), E2 edit pass (24, 98 s), **E3 question FAIL, false success** (23, 164 s), E4
+export pass (15, 63 s), E5 must fail pass (8, 29 s). Total 4/5, 1 false success, 0 changes outside the task, $0.068.
+Not deployed. E3: filtered by client only, read three full pages and never checked for a fourth, then finished
+terminada with no count and no answer; code accepted it because it only checked a count when one was given.
+
+## Validation 1, partial analysis (Oct 10, 17:44, 15 of 56 hidden tasks finished)
+
+Read-only: `GET /tasks/{id}` on the public URL, ids from the Railway request log. Causes in general terms (nothing
+from the hidden app goes into code, prompts or tests):
+
+| Cause                                                                                | Tasks |
+| ------------------------------------------------------------------------------------ | ----- |
+| Gave up "for time" with a third or more of the clock left                            | 4     |
+| Commit guard blocked a retry after a save that did not store, or verification failed | 3     |
+| Identity check too strict when the task gives a shorter form of a name               | 2     |
+| Could not find something on screen                                                   | 1     |
+| Lost information read in earlier steps (history keeps actions, not observations)     | 1     |
+| A control that rejects typing (probably a dropdown)                                  | 1     |
+| Copied a secret shown on screen into the summary (terminada)                         | 1     |
+| Refused a request to reveal our credentials (probably correct)                       | 1     |
+| Looks correct (terminada)                                                            | 1     |
+
+- No task failed on connection or start-up; the 5-second one was the refusal above.
+- The deployed version (`816642c`) accepts a terminada with no count and no answer, like run 5; no terminada so far
+  was a question.
+- Top cause: our step prompt showed the seconds left from step 1, and the model budgeted itself out of long tasks.
+- Gap: the request log does not record the summary; it had to be read through the API.
+
+### Run 6 (Oct 10, 17:53, commit `76bf573`, Haiku 5.5)
+
+E1 create **FAIL** (fallida, 38 steps), E2 edit pass, E3 question **pass** (16 steps, 74 s), E4 export pass, E5 must
+fail pass. 4/5, 0 false successes, $0.064. E1 failed on our new rule: the agent read the new client into the ledger
+to verify its save, and "rows read but no count and no answer" refused its terminada three times. Fixed in
+`4ac8bfe`: the rule applies only to a task that committed nothing (a pure question).
+
+### Run 7 (Oct 10, 18:03, commit `4ac8bfe`, Haiku 5.5): deployed
+
+| Case | Type      | Result | Estado    | Steps | Time  |
+| ---- | --------- | ------ | --------- | ----- | ----- |
+| E1   | create    | pass   | terminada | 31    | 121 s |
+| E2   | edit      | pass   | terminada | 18    | 71 s  |
+| E3   | question  | pass   | terminada | 20    | 112 s |
+| E4   | export    | pass   | terminada | 14    | 59 s  |
+| E5   | must fail | pass   | fallida   | 9     | 31 s  |
+
+**5/5, 0 false successes, 0 changes outside the task, $0.072.** E3: filtered by client and state, read pages of 20,
+20 and 11 rows (the short page proves the end), excluded the longer name; code counted 45. E5: the identity rule
+found two records with the same name and refused to choose; the summary names both.
+
+What `4ac8bfe` adds over the version validation 1 started with (`816642c`): the time left shown only in the last
+60 s; `remember` notes; a terminada with rows read and no answer is refused when nothing was committed; a count needs
+checkable proof that the list ended; dropdown hint; a credentials rule plus a code backstop that removes key-shaped
+tokens from summaries; identity by code (`resolve_identity`); connection retry.
+
+## Validation 1: mid-run deploy (Oct 10)
+
+- **Split time: 18:20:32** (Bogotá). Hidden tasks finished before it were run by `816642c`; after it, by `4ac8bfe`.
+  The task in flight at the switch is lost (memory is wiped), and so are the traces inside the old container.
+- Before the switch, 30 hidden tasks had finished: 14 terminada, 16 fallida. Of the first 15, 2 were terminada; of
+  the next 15, 12. Summaries saved through the API in `artifacts/validation-1/tasks.json` (not committed).
+- Rollback, allowed only on evidence (a false success, a wrong record chosen by the identity rule, or a secret in a
+  summary) and not after 18:50: `railway up <worktree of 816642c> --path-as-root --service agent`.
+
+## Known limits (Oct 10, freeze)
+
+- **A is not built:** the commit guard still blocks a second commit on a record even when a read shows the first did
+  not store (validation 1: 2 tasks). The fix needs the traces of those tasks to tell a confirmation dialog from a
+  validation error, and reading the container needs an SSH key we did not add.
+- Dates: "today" comes from the app's screen through the model; the parsing rules and cases above are not built.
+- VNC hardening tests (fake server, reconnect once mid-task) are planned, not built.
+- The request log does not record the summary; it is read through the API.
+- Validation 1 mixes two versions (see the split time).
