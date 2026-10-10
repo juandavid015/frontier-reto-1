@@ -3,26 +3,12 @@
 // Usage: pnpm eval [--model=provider/name] [cases folder, default pruebas] [case id filter, e.g. E3]
 // Without --model, the model in src/agent/config.ts is used.
 
-import { readdir, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
-import { z } from 'zod';
 import { runTask, type TaskOutcome } from '../src/agent/run-task.ts';
 import { agentConfig } from '../src/agent/config.ts';
 import { runProbe } from './probe-support.ts';
-
-const AFTER_RESET_WAIT_MS = 8_000;
-const HTTP_TIMEOUT_MS = 30_000;
-
-const CaseSchema = z.object({
-  id: z.string(),
-  instruccion: z.string(),
-  estado_esperado: z.enum(['terminada', 'fallida']),
-  respuesta_esperada: z.string().optional(),
-  claves_razon: z.array(z.string()).optional(),
-  diff_esperado: z.array(z.object({ accion: z.string() }).passthrough()),
-});
-type EvalCase = z.infer<typeof CaseSchema>;
+import { checkApp, httpBaseUrl, loadCases, requireEnv, resetDesktop, type EvalCase } from './practice-desktop.ts';
 
 type CaseResult = {
   id: string;
@@ -69,55 +55,6 @@ await runProbe(async () => {
   }
   console.log(`\n${formatTotals(results)}`);
 });
-
-function requireEnv<const Names extends string[]>(names: Names): Record<Names[number], string> {
-  const values: Record<string, string> = {};
-  for (const name of names) {
-    const value = process.env[name];
-    if (!value) throw new Error(`Missing ${name} in .env`);
-    values[name] = value;
-  }
-  return values as Record<Names[number], string>;
-}
-
-// wss://host/websockify -> https://host
-function httpBaseUrl(webSocketUrl: string): string {
-  const url = new URL(webSocketUrl);
-  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-  return url.origin;
-}
-
-async function loadCases(folder: string): Promise<EvalCase[]> {
-  const files = (await readdir(folder)).filter((file) => file.endsWith('.json')).sort();
-  return Promise.all(
-    files.map(async (file) => CaseSchema.parse(JSON.parse(await readFile(path.join(folder, file), 'utf8')))),
-  );
-}
-
-async function resetDesktop(baseUrl: string, token: string): Promise<void> {
-  const response = await fetch(`${baseUrl}/__reset`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`Reset failed with HTTP ${response.status}`);
-  // The reset restarts the browser; give it time to show the app again.
-  await sleep(AFTER_RESET_WAIT_MS);
-}
-
-async function checkApp(baseUrl: string, token: string, evalCase: EvalCase): Promise<unknown> {
-  try {
-    const response = await fetch(`${baseUrl}/__check`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(evalCase),
-      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
-    });
-    return await response.json();
-  } catch (error) {
-    return { pass: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
 
 function scoreCase(evalCase: EvalCase, outcome: TaskOutcome, appCheck: unknown): CaseResult {
   const appPassed = (appCheck as { pass?: unknown }).pass === true;

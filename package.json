@@ -18,7 +18,8 @@
     "probe:input": "node --env-file-if-exists=.env scripts/probe-input.ts",
     "eval": "node --env-file-if-exists=.env scripts/eval.ts",
     "pointing": "node --env-file-if-exists=.env scripts/pointing-test.ts",
-    "budget": "node --env-file-if-exists=.env scripts/budget.ts"
+    "budget": "node --env-file-if-exists=.env scripts/budget.ts",
+    "remote": "node --env-file-if-exists=.env scripts/remote-task.ts"
   },
   "packageManager": "pnpm@11.8.0",
   "devDependencies": {

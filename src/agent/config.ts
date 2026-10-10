@@ -6,7 +6,8 @@ export const agentConfig = {
   model: 'anthropic/claude-haiku-5.5',
   openRouterUrl: 'https://openrouter.ai/api/v1/chat/completions',
   modelTimeoutMs: 60_000,
-  maxOutputTokens: 1_000,
+  // read_rows copies a whole page of rows into one reply; 1,000 tokens could cut it mid-JSON.
+  maxOutputTokens: 4_000,
   // The brief gives 5 minutes per task. We stop earlier to report and close the connection in time.
   taskDeadlineMs: 4.5 * 60 * 1000,
   // Only a runaway guard: the deadline above is the real limit. At 30, a correct task finished on step 29 (run 1).
@@ -15,4 +16,7 @@ export const agentConfig = {
   historySteps: 12,
   // A model reply that fails validation is retried once with the error, then the task fails.
   invalidReplyRetries: 1,
+  // A finish refused by the rules (unverified save, count without rows) goes back to the model; after this many the
+  // task ends as fallida with the reason, instead of looping until the clock runs out.
+  maxRefusedFinishes: 3,
 };

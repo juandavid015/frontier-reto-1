@@ -2,7 +2,9 @@ import { Desktop, type ActionResult } from '../desktop/desktop.ts';
 import { encodePng } from '../image/png.ts';
 import { redact } from '../secrets/redact.ts';
 import type { Action, StepReply } from './actions.ts';
+import { CommitGuard } from './commit-guard.ts';
 import { agentConfig } from './config.ts';
+import { RowLedger } from './row-ledger.ts';
 import { requestStep, type ModelUsage } from './model-client.ts';
 import { stepPrompt, systemPrompt } from './prompt.ts';
 import { Trace } from './trace.ts';
@@ -32,6 +34,8 @@ export type TaskOutcome = {
 
 type Finish = Extract<Action, { kind: 'finish' }>;
 type LoopEnd = { estado: Estado; summary: string; answer?: string | undefined };
+// What plain code remembers during one task, to enforce the rules the model might forget.
+type TaskMemory = { ledger: RowLedger; guard: CommitGuard; refusedFinishes: number };
 
 export async function runTask(input: TaskInput): Promise<TaskOutcome> {
   const startedAt = performance.now();
@@ -73,6 +77,7 @@ async function agentLoop(
   startedAt: number,
 ): Promise<LoopEnd> {
   const history: string[] = [];
+  const memory: TaskMemory = { ledger: new RowLedger(), guard: new CommitGuard(), refusedFinishes: 0 };
   const system = systemPrompt(desktop.width, desktop.height);
   for (let step = 1; step <= agentConfig.maxSteps; step++) {
     if (performance.now() - startedAt > agentConfig.taskDeadlineMs) {
@@ -87,11 +92,25 @@ async function agentLoop(
     const secondsLeft = Math.round((agentConfig.taskDeadlineMs - (performance.now() - startedAt)) / 1000);
     const text = stepPrompt(input.task, history.slice(-agentConfig.historySteps), step, secondsLeft);
     const reply = await decide(input, system, text, encodePng(frame), trace, counters, step);
-    if (reply.action.kind === 'finish') return finishFrom(reply.action);
+    const { action } = reply;
+    if (action.kind === 'finish') {
+      const decision = checkFinish(action, memory);
+      await trace.event('finish', { step, action, decision });
+      if (decision.accepted) return decision.end;
+      memory.refusedFinishes++;
+      if (memory.refusedFinishes >= agentConfig.maxRefusedFinishes) {
+        return {
+          estado: 'fallida',
+          summary: `${action.summary} The result could not be confirmed: ${decision.reason}`,
+        };
+      }
+      history.push(`${step}. finish refused by the rules: ${decision.reason}`);
+      continue;
+    }
 
-    const result = await act(desktop, reply.action);
-    history.push(`${step}. ${describeAction(reply.action)} (${reply.plan}) -> ${result}`);
-    await trace.event('step', { step, observation: reply.observation, plan: reply.plan, action: reply.action, result });
+    const result = await act(desktop, action, memory);
+    history.push(`${step}. ${describeAction(action)} (${reply.plan}) -> ${result}`);
+    await trace.event('step', { step, observation: reply.observation, plan: reply.plan, action, result });
   }
   return { estado: 'fallida', summary: `Reached the limit of ${agentConfig.maxSteps} steps before finishing.` };
 }
@@ -125,29 +144,68 @@ async function decide(
   throw new Error(`The model gave no valid action at step ${step}`);
 }
 
-async function act(desktop: Desktop, action: Exclude<Action, Finish>): Promise<string> {
+async function act(desktop: Desktop, action: Exclude<Action, Finish>, memory: TaskMemory): Promise<string> {
   try {
-    return describeResult(await runAction(desktop, action));
+    switch (action.kind) {
+      case 'click':
+        return await click(desktop, action, memory.guard);
+      case 'type':
+        return describeResult(
+          await (action.replace ? desktop.replaceText(action.text) : desktop.typeText(action.text)),
+        );
+      case 'keys':
+        return describeResult(await desktop.pressKeys(action.keys));
+      case 'scroll':
+        return describeResult(await desktop.scroll(action.x, action.y, action.direction, action.steps));
+      case 'read_rows': {
+        const { added, total } = memory.ledger.record(action.table, action.rows);
+        return `recorded ${action.rows.length} rows (${added} new); "${action.table}" now has ${total} distinct rows`;
+      }
+      case 'verify_saved':
+        memory.guard.markVerified();
+        return 'verification recorded';
+    }
   } catch (error) {
     return `failed: ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
-function runAction(desktop: Desktop, action: Exclude<Action, Finish>): Promise<ActionResult> {
-  switch (action.kind) {
-    case 'click':
-      return desktop.click(action.x, action.y);
-    case 'type':
-      return action.replace ? desktop.replaceText(action.text) : desktop.typeText(action.text);
-    case 'keys':
-      return desktop.pressKeys(action.keys);
-    case 'scroll':
-      return desktop.scroll(action.x, action.y, action.direction, action.steps);
-  }
+// Exploring clicks keep the "no visible change" signal: it catches a missed click. A commit never reports it,
+// because on v4.2 a good save leaves the form almost unchanged and the signal would invite a duplicate.
+async function click(
+  desktop: Desktop,
+  action: Extract<Action, { kind: 'click' }>,
+  guard: CommitGuard,
+): Promise<string> {
+  const record = action.record?.trim() || `the record at (${action.x}, ${action.y})`;
+  const decision = action.commits ? guard.checkCommit(record) : guard.checkClick(action.x, action.y);
+  if (!decision.allowed) return `refused, not clicked: ${decision.reason}`;
+  const result = await desktop.click(action.x, action.y);
+  if (!action.commits) return describeResult(result);
+  guard.recordCommit(record, action.x, action.y);
+  return `commit sent for "${record}". Do not click it again. Verify by reading the stored record (list or change log), then verify_saved`;
 }
 
-function finishFrom(action: Finish): LoopEnd {
-  return { estado: action.estado, summary: action.summary, answer: action.answer };
+type FinishDecision = { accepted: true; end: LoopEnd } | { accepted: false; reason: string };
+
+function checkFinish(action: Finish, memory: TaskMemory): FinishDecision {
+  if (action.estado === 'fallida') return { accepted: true, end: { estado: 'fallida', summary: action.summary } };
+  const pending = memory.guard.pendingVerification;
+  if (pending) return { accepted: false, reason: `the commit on "${pending}" is not verified; read the stored record` };
+  if (!action.count)
+    return { accepted: true, end: { estado: 'terminada', summary: action.summary, answer: action.answer } };
+
+  const { table, where } = action.count;
+  const result = memory.ledger.count(table, where);
+  if (result.rowsRead === 0) return { accepted: false, reason: `no rows were read into "${table}" with read_rows` };
+  if (result.missingColumns.length > 0) {
+    return { accepted: false, reason: `no row read has the column(s) ${result.missingColumns.join(', ')}` };
+  }
+  const conditions = Object.entries(where)
+    .map(([column, value]) => `${column} = "${value}"`)
+    .join(' and ');
+  const summary = `${action.summary} Counted by code: ${result.count} of ${result.rowsRead} rows read where ${conditions}.`;
+  return { accepted: true, end: { estado: 'terminada', summary, answer: String(result.count) } };
 }
 
 // The brief: a question's answer goes on a line "respuesta: <value>". A task that fails carries no such line.
@@ -160,7 +218,11 @@ function buildSummary(end: LoopEnd): string {
 function describeAction(action: Exclude<Action, Finish>): string {
   switch (action.kind) {
     case 'click':
-      return `click (${action.x}, ${action.y})`;
+      return `${action.commits ? 'commit click' : 'click'} (${action.x}, ${action.y})`;
+    case 'read_rows':
+      return `read_rows "${action.table}" (${action.rows.length} rows)`;
+    case 'verify_saved':
+      return `verify_saved: ${action.evidence}`;
     case 'type':
       return `${action.replace ? 'replace with' : 'type'} ${JSON.stringify(action.text)}`;
     case 'keys':
