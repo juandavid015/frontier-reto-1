@@ -1,0 +1,22 @@
+{"image": "list-menu-open.png", "target": "top menu \"Archivo\"", "box": [13, 36, 70, 59]}
+{"image": "list-menu-open.png", "target": "top menu \"Comercial\"", "box": [86, 36, 158, 59]}
+{"image": "list-menu-open.png", "target": "top menu \"Cartera\"", "box": [176, 36, 231, 59]}
+{"image": "list-menu-open.png", "target": "top menu \"Ayuda\"", "box": [360, 36, 408, 59]}
+{"image": "list-menu-open.png", "target": "open menu item \"Bitácora de cambios\"", "box": [242, 63, 449, 89]}
+{"image": "list-menu-open.png", "target": "open menu item \"Reportes generados\"", "box": [242, 90, 449, 116]}
+{"image": "list-menu-open.png", "target": "open menu item \"Configuración\"", "box": [242, 117, 449, 143]}
+{"image": "list-menu-open.png", "target": "empty text field under the label \"Cliente\"", "box": [24, 122, 171, 140]}
+{"image": "list-menu-open.png", "target": "button \"Exportar\"", "box": [15, 156, 94, 176]}
+{"image": "list-menu-open.png", "target": "invoice code link \"FV-10004\"", "box": [21, 234, 82, 250]}
+{"image": "list-menu-open.png", "target": "invoice code link \"FV-10067\"", "box": [21, 648, 82, 664]}
+{"image": "list-menu-open.png", "target": "button \"Siguiente\"", "box": [165, 674, 250, 694]}
+{"image": "client-form.png", "target": "text field \"Razón social o nombre\"", "box": [28, 148, 899, 168]}
+{"image": "client-form.png", "target": "text field \"NIT\"", "box": [28, 192, 450, 212]}
+{"image": "client-form.png", "target": "text field \"Teléfono\"", "box": [477, 192, 899, 212]}
+{"image": "client-form.png", "target": "dropdown \"Ciudad\"", "box": [29, 237, 449, 257]}
+{"image": "client-form.png", "target": "text field \"Dirección\"", "box": [477, 236, 899, 256]}
+{"image": "client-form.png", "target": "text field \"Correo\"", "box": [28, 282, 450, 302]}
+{"image": "client-form.png", "target": "dropdown \"Estado\"", "box": [477, 282, 899, 304]}
+{"image": "client-form.png", "target": "empty text area \"Observaciones\"", "box": [28, 328, 899, 371]}
+{"image": "client-form.png", "target": "button \"Guardar\"", "box": [28, 388, 104, 408]}
+{"image": "client-form.png", "target": "button \"Volver\"", "box": [113, 388, 176, 408]}
