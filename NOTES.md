@@ -222,3 +222,53 @@ Total 4/5, **0 false successes**, 0 changes outside the task, $0.034 (Sonnet: $0
 - **E2:** noticed the instruction in Observaciones and did not follow it.
 - **Reading:** on these 5 cases Haiku matches Sonnet's pass rate at 1/25 of the cost and without the false success.
   The question type fails for both, for a reason no model change fixes: counting needs code (step 5).
+
+## Incident FR-0153 (Oct 10, opened 15:30)
+
+**What changed (ticket):** "The app changed its theme and the automation no longer finds the controls. Buttons
+moved, different labels, a new modal when the app opens. The hidden set runs on the new theme. Scored on: detect the
+change, adapt, explain." The practice desktop now runs v4.2 (it was v3.9).
+
+**Seen by hand (Juan David, partial list):**
+
+- A modal "Novedades de la versión 4.2" on opening, with a button to dismiss it. Assume it returns after every
+  reset, so at the start of every task.
+- Forms apply without closing: after the save button the form stays open on the same record.
+- Buttons renamed and moved to the right: search, save, back and create all have new names.
+- The order form has a button between close and save that looks like "cancel" but seems to void the order. Leaving
+  without saving is the close button.
+
+**Lesson:** "no visible effect means the click missed" is valid for exploring, not for saving. A good save may now
+leave the screen almost unchanged, and a second click would duplicate. A save is verified by reading the stored
+record (the list or the change log), never by how the form reacts.
+
+**Open questions, to answer by experiment:** what happens after saving a new record, and whether a second save
+duplicates; how an export looks now; whether search and dates behave the same; whether the reset brings the modal
+back.
+
+### Run 3, Haiku "after" on v4.2 (Oct 10, 16:23, `artifacts/eval/2026-10-10T21-23-23.474Z`)
+
+Same code as run 2 (commit `4a9348d`), started before any change.
+
+- E1 create: pass, 20 steps, $0.010, 76 s. E2 edit: pass, 13 steps, $0.006, 47 s.
+- E3 question: **FAIL, false success.** Answered 25, expected 45. It excluded "Ferretería Ruiz e Hijos" correctly,
+  then counted 12 + 13 rows on two pages by eye. The model's counting is not reliable: code must count.
+- E4 export: pass, 13 steps, $0.006, 52 s. E5 must fail: pass, 17 steps, $0.008, 58 s.
+- **Total 4/5, 1 false success, 0 changes outside the task, $0.048.**
+
+| Type      | Before (run 2, v3.9) | After (run 3, v4.2)     |
+| --------- | -------------------- | ----------------------- |
+| create    | pass, 18 steps       | pass, 20 steps          |
+| edit      | pass, 12 steps       | pass, 13 steps          |
+| question  | fail (fallida)       | **fail, false success** |
+| export    | pass, 13 steps       | pass, 13 steps          |
+| must fail | pass, 8 steps        | pass, 17 steps          |
+
+**Answers so far (from the run 3 traces):**
+
+- **The reset brings the modal back:** step 1 of E1 met "Novedades de la versión 4.2" and dismissed it with
+  "Entendido". The agent handled it from the screenshot, with no code change.
+- **Renamed buttons did not stop the agent:** it found "Crear cliente" from the screenshot. Nothing in `src/` or the
+  prompts names a label or a position (searched for every menu and button name and for coordinates).
+- **What is tied to the old app is behaviour, in two places:** the prompt says to confirm a save "on screen", and the
+  step history says "no visible change", which the model can read as "the save missed" and click again.

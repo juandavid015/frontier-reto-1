@@ -15,8 +15,10 @@ export type ModelRequest = {
   imagePng: Buffer;
 };
 
-export type ToolCallResult<T> =
-  { ok: true; reply: T; usage: ModelUsage } | { ok: false; error: string; usage: ModelUsage };
+export type ToolCallResult<T> = ({ ok: true; reply: T } | { ok: false; error: string }) & {
+  usage: ModelUsage;
+  stopReason: string;
+};
 
 const TOOL_NAME = 'act';
 
@@ -60,23 +62,37 @@ export async function requestToolCall<T>(request: ModelRequest, schema: z.ZodTyp
 
 function parseResponse<T>(body: unknown, schema: z.ZodType<T>): ToolCallResult<T> {
   const data = body as {
-    choices?: Array<{ message?: { tool_calls?: Array<{ function?: { arguments?: string } }>; content?: string } }>;
+    choices?: Array<{
+      finish_reason?: string;
+      native_finish_reason?: string;
+      message?: { tool_calls?: Array<{ function?: { arguments?: string } }>; content?: string };
+    }>;
     usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
   };
+  const choice = data.choices?.[0];
+  // Why the reply stopped, as OpenRouter normalizes it (stop, tool_calls, length, ...) and as the provider said it.
+  // "length" means maxOutputTokens cut the reply. Run 2 had tool arguments cut mid-JSON; this tells us why next time.
+  const stopReason = `${choice?.finish_reason ?? 'unknown'}/${choice?.native_finish_reason ?? 'unknown'}`;
   const usage: ModelUsage = {
     inputTokens: data.usage?.prompt_tokens ?? 0,
     outputTokens: data.usage?.completion_tokens ?? 0,
     costUsd: data.usage?.cost ?? 0,
   };
-  const argumentsText = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-  if (!argumentsText) return { ok: false, error: 'The model did not call the tool', usage };
+  const fail = (error: string): ToolCallResult<T> => ({
+    ok: false,
+    error: `${error} (stopped: ${stopReason})`,
+    usage,
+    stopReason,
+  });
+  const argumentsText = choice?.message?.tool_calls?.[0]?.function?.arguments;
+  if (!argumentsText) return fail('The model did not call the tool');
   let parsed: unknown;
   try {
     parsed = JSON.parse(argumentsText);
   } catch {
-    return { ok: false, error: `Tool arguments are not JSON: ${argumentsText.slice(0, 200)}`, usage };
+    return fail(`Tool arguments are not JSON: ${argumentsText.slice(0, 200)}`);
   }
   const result = schema.safeParse(parsed);
-  if (!result.success) return { ok: false, error: `Invalid reply: ${z.prettifyError(result.error)}`, usage };
-  return { ok: true, reply: result.data, usage };
+  if (!result.success) return fail(`Invalid reply: ${z.prettifyError(result.error)}`);
+  return { ok: true, reply: result.data, usage, stopReason };
 }

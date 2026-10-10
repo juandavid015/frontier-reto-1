@@ -115,6 +115,7 @@ async function decide(
       attempt,
       ms: Math.round(performance.now() - callStartedAt),
       ...usageOf(result.usage),
+      stopReason: result.stopReason,
       ok: result.ok,
     });
     if (result.ok) return result.reply;

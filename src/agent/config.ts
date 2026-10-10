@@ -1,8 +1,9 @@
 // Everything about the agent that we may tune or that the brief could change.
 
 export const agentConfig = {
-  // One value decides the model (NOTES.md: the pointing test picks the final one).
-  model: 'anthropic/claude-sonnet-5.5',
+  // One value decides the model. Haiku 5.5: same pass rate as Sonnet 5.5 on the practice cases, no false success,
+  // 1/25 of the cost, 22/22 in the pointing test (NOTES.md, E4 and runs 1 and 2).
+  model: 'anthropic/claude-haiku-5.5',
   openRouterUrl: 'https://openrouter.ai/api/v1/chat/completions',
   modelTimeoutMs: 60_000,
   maxOutputTokens: 1_000,
