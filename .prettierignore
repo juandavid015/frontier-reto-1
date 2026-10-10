@@ -1,5 +1,5 @@
 artifacts/
-package-lock.json
+pnpm-lock.yaml
 
 # Given by the organizers or written by hand: formatting must not rewrite them.
 docs/

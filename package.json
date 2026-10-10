@@ -8,16 +8,25 @@
     "node": ">=24"
   },
   "scripts": {
+    "start": "node --env-file-if-exists=.env src/server/main.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc",
     "test": "node --test \"src/**/*.test.ts\"",
-    "check": "npm run format:check && npm run typecheck && npm test",
-    "probe:screenshot": "node --env-file-if-exists=.env scripts/probe-screenshot.ts"
+    "check": "pnpm format:check && pnpm typecheck && pnpm test",
+    "probe:screenshot": "node --env-file-if-exists=.env scripts/probe-screenshot.ts",
+    "probe:input": "node --env-file-if-exists=.env scripts/probe-input.ts",
+    "eval": "node --env-file-if-exists=.env scripts/eval.ts",
+    "pointing": "node --env-file-if-exists=.env scripts/pointing-test.ts",
+    "budget": "node --env-file-if-exists=.env scripts/budget.ts"
   },
+  "packageManager": "pnpm@11.8.0",
   "devDependencies": {
     "@types/node": "24.19.2",
     "prettier": "3.9.10",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
   }
 }
