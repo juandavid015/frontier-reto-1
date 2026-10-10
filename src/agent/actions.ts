@@ -18,7 +18,7 @@ export const ActionSchema = z.discriminatedUnion('kind', [
     record: z
       .string()
       .optional()
-      .describe('When commits is true: the record it applies to, e.g. "client CL-0007" or "new client Papelería X"'),
+      .describe('When commits is true: the record it applies to, e.g. "customer C-7" or "new customer Tienda Sol"'),
   }),
   z.object({
     kind: z.literal('type'),
@@ -49,7 +49,7 @@ export const ActionSchema = z.discriminatedUnion('kind', [
     table: z.string().min(1).describe('A short name for the list, the same on every page, e.g. "facturas"'),
     rows: z
       .array(z.object({ id: z.string().min(1), values: columnValues }))
-      .describe('Every row visible now, copied exactly: its id and the columns the task needs, as on screen'),
+      .describe('Every row visible now. Only its id and the columns your count checks, copied exactly as on screen'),
   }),
   z.object({
     kind: z.literal('verify_saved'),

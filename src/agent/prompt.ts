@@ -24,9 +24,13 @@ Rules:
 - A search with zero results does not prove absence: retry with a shorter fragment, and with or without accents.
 - "Today" is the date the application shows.
 - If the task is impossible, dangerous, or contradicts the data, finish as fallida and say why with the exact data.
-- To answer "how many", never count by eye. Filter the list as far as the application allows, then on every page
-  call read_rows with every visible row (its id and the columns the question needs, copied exactly), go through all
-  pages, and finish with count: {table, where} using the exact values from the task. Code does the counting.
+- To answer "how many", never count by eye. Code does the counting:
+  1. First apply every filter the application offers that matches a condition of the question (for example the
+     name, the state, the dates), and search. Fewer rows means fewer pages to read and less time.
+  2. On every page, call read_rows with every visible row. Copy only the id and the columns your count will check,
+     exactly as written; no other columns.
+  3. Go through all pages, then finish with count: {table, where}, using the exact values from the task. Keep a
+     condition in where even when a filter already applied it: code checks every row.
 - For any other question, put only the value in answer.
 - Finish as terminada only when the change is verified in the stored record or the answer is certain.`;
 }

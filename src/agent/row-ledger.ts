@@ -1,7 +1,7 @@
 // "The model reads; code counts" (AGENTS.md). The model copies the rows it sees on each page; this ledger keeps them
 // by table and id, so a row read twice counts once, and counts the rows whose columns match exactly.
-// Example: rows {FV-1: cliente "Ferretería Ruiz"} and {FV-2: cliente "Ferretería Ruiz e Hijos"};
-// count where cliente = "Ferretería Ruiz" is 1, not 2.
+// Example: rows {INV-1: cliente "Comercial Alba"} and {INV-2: cliente "Comercial Alba Norte"};
+// count where cliente = "Comercial Alba" is 1, not 2.
 
 export type Row = { id: string; values: Record<string, string> };
 export type CountResult = { count: number; rowsRead: number; missingColumns: string[] };
@@ -47,7 +47,7 @@ export class RowLedger {
   }
 }
 
-// Column names compare without case; values keep case and accents, since "Ramírez" and "Ramirez" are different people.
+// Column names compare without case; values keep case and accents, since "Albán" and "Alban" can be different people.
 function normalizeValues(values: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(values).map(([column, value]) => [normalize(column).toLowerCase(), normalize(value)]),
