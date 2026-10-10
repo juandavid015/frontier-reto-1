@@ -4,6 +4,8 @@ import path from 'node:path';
 import { createAgentServer } from './http-server.ts';
 
 const DEFAULT_PORT = 3000;
+// All interfaces, so the host's router can reach the container (Railway requires 0.0.0.0 or ::).
+const HOST = '0.0.0.0';
 
 function requireVariable(name: string): string {
   const value = process.env[name];
@@ -17,4 +19,4 @@ const server = createAgentServer({
   apiKey: requireVariable('OPENROUTER_API_KEY'),
   traceRoot: path.join('artifacts', 'runs'),
 });
-server.listen(port, () => console.log(`Agent listening on port ${port}`));
+server.listen(port, HOST, () => console.log(`Agent listening on ${HOST}:${port}`));
