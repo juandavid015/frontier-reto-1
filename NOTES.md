@@ -372,3 +372,23 @@ tokens from summaries; identity by code (`resolve_identity`); connection retry.
 - VNC hardening tests (fake server, reconnect once mid-task) are planned, not built.
 - The request log does not record the summary; it is read through the API.
 - Validation 1 mixes two versions (see the split time).
+
+## After the switch to 4ac8bfe (Oct 10, 18:20 to 18:45)
+
+- **Hypothesis, not proven: commits that need a confirmation are dropped.** Evidence: 5 hidden tasks (2 before the
+  switch, 3 after) with the same pattern: one commit click, then the stored record still shows the old value, then
+  fallida. After any commit click our code tells the model "do not click it again; verify by reading the stored
+  record". If the app asks for a confirmation after the save button, the model goes to read instead of confirming,
+  and nothing is stored. Saves stored with one click in the practice app, which is why we never saw it. Not proven:
+  the screenshots are inside the container and reading them needs an SSH key we did not add. The guard is in both
+  deployed versions (since `8f09435`), so a rollback would not change it. Next step: look at the screen right after
+  the commit; if it is a dialog, confirming it is part of the same commit.
+- **False success at 18:39, counting:** a count question got `respuesta: 0` because the model wrote the date range
+  "in October" as an exact value (`Fecha = "octubre 2026"`) in the count's conditions; no row matched, and code
+  counted exactly what it was asked. Same counting code in both versions. Next step: refuse a count whose condition
+  value appears in no row read, and ask for ranges to be filtered in the app.
+- **Identity by document only:** a task that names a record only by a document number ended fallida, because
+  `resolve_identity` always needs a name. Next step: with no name in the task, a unique match on the identifier
+  decides.
+- No rollback (decided 18:45): no evidence that `4ac8bfe` is worse than `816642c`, and these three defects are in
+  both or come from a rule that also prevented wrong records.

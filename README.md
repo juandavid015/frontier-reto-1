@@ -147,6 +147,9 @@ act, record. Plain code enforces the rules the model might forget:
 - **A save that did not store cannot be retried:** the commit guard blocks a second commit on a record even when a
   read shows the first did not store (2 hidden tasks). The fix needs to tell a confirmation dialog from a validation
   error first; not built.
+- **Hypothesis, not proven:** commits that need a confirmation dialog are dropped, because after a commit the agent
+  is told to verify by reading instead of clicking again. Evidence: 5 hidden tasks with the same pattern (one commit,
+  old value still stored). See NOTES.md.
 - **Counting is correct but can be slow** on long lists: the prompt asks to filter first. Next: read copied text from
   the remote clipboard, if it reaches us (not tested).
 - **Dates:** "today" comes from the app's screen; the parsing rules and their cases are in NOTES.md, not built yet.
