@@ -58,3 +58,12 @@
 - **Timing (second run, 13:52, from Colombia to the Railway-hosted desktop):** login 1840 ms, one full raw screen
   1571 ms. A task has 5 minutes, so a full screen after every action costs real time. Asking only for changed areas
   (incremental updates) is the first thing to measure if steps turn out slow.
+
+### E2. Shared mode keeps other viewers connected (Oct 10)
+
+- **Hypothesis:** the desktop honours our shared flag, so the probe does not disconnect a browser viewer.
+- **Why it matters:** we want to watch the agent work in the browser. If the desktop allowed only one viewer, either
+  the agent or the person watching would be thrown out.
+- **Probe:** open the desktop's noVNC page in a browser, run `npm run probe:screenshot`, watch the browser tab.
+- **Result:** confirmed by hand. The browser stayed connected during and after the probe, and the probe still saved
+  its PNG.
