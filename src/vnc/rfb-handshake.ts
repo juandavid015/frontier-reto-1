@@ -37,7 +37,7 @@ export async function performHandshake(transport: Transport, password: string): 
   transport.send(Buffer.from([SHARED_FLAG]));
   const serverInit = await readServerInit(reader);
   transport.send(setPixelFormatMessage());
-  transport.send(setEncodingsMessage([Encoding.raw, Encoding.desktopSize]));
+  transport.send(setEncodingsMessage([Encoding.raw, Encoding.desktopSize, Encoding.cursor]));
   return serverInit;
 }
 
@@ -97,6 +97,7 @@ async function readServerInit(reader: ByteReader): Promise<ServerInit> {
   await reader.skip(PIXEL_FORMAT_LENGTH);
   const nameLength = await reader.readUint32();
   const name = (await reader.read(nameLength)).toString('utf8');
+  if (width === 0 || height === 0) throw new Error(`Desktop reported an empty screen (${width}x${height})`);
   return { width, height, name };
 }
 

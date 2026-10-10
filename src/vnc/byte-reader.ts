@@ -8,10 +8,15 @@ type PendingRead = {
 };
 
 export class ByteReader {
+  readonly #maxReadBytes: number;
   #chunks: Buffer[] = [];
   #bufferedLength = 0;
   #pending: PendingRead | undefined;
   #failure: Error | undefined;
+
+  constructor(maxReadBytes: number) {
+    this.#maxReadBytes = maxReadBytes;
+  }
 
   push(chunk: Buffer): void {
     if (chunk.length === 0) return;
@@ -20,7 +25,10 @@ export class ByteReader {
     this.#settlePending();
   }
 
-  /** Ends the stream: the pending read and every later read reject with this error. */
+  /**
+   * Ends the stream: a read that cannot be completed rejects with this error. Bytes that already arrived stay
+   * readable, because a server that rejects a login sends its reason and closes right after.
+   */
   fail(error: Error): void {
     this.#failure ??= error;
     const pending = this.#pending;
@@ -30,6 +38,9 @@ export class ByteReader {
 
   read(size: number): Promise<Buffer> {
     if (this.#pending) return Promise.reject(new Error('ByteReader allows one read at a time'));
+    if (size > this.#maxReadBytes) {
+      return Promise.reject(new Error(`Desktop announced ${size} bytes, above our limit of ${this.#maxReadBytes}`));
+    }
     if (this.#bufferedLength >= size) return Promise.resolve(this.#take(size));
     if (this.#failure) return Promise.reject(this.#failure);
     return new Promise((resolve, reject) => {

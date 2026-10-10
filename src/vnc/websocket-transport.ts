@@ -13,10 +13,11 @@ export type Transport = {
 export type WebSocketOptions = {
   subprotocols: string[];
   connectTimeoutMs: number;
+  maxReadBytes: number;
 };
 
 export async function openWebSocketTransport(url: string, options: WebSocketOptions): Promise<Transport> {
-  const reader = new ByteReader();
+  const reader = new ByteReader(options.maxReadBytes);
   const socket = new WebSocket(url, options.subprotocols);
   socket.binaryType = 'arraybuffer';
 

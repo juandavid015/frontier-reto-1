@@ -5,26 +5,27 @@ import { performHandshake } from './rfb-handshake.ts';
 import { withTimeout } from './timeout.ts';
 import { openWebSocketTransport, type Transport } from './websocket-transport.ts';
 
-// One VNC session with a remote desktop: log in, keep a copy of the screen, hand out screenshots.
+// One VNC session with a remote desktop: log in, keep a live copy of the screen, send mouse and key events.
 // After the handshake a single loop reads every server message, so the byte stream is never read from two places.
+// Like noVNC, we ask for the next round of changes as soon as one arrives. The copy is then always current, a
+// screenshot needs no network trip, and "has the screen stopped changing" is a question about local state.
 
 export type VncConnectOptions = {
   url: string;
   password: string;
 };
 
-type UpdateWaiter = {
-  resolve: (frame: Frame) => void;
-  reject: (error: Error) => void;
-};
-
 export class VncClient {
   readonly serverName: string;
   #transport: Transport;
   #framebuffer: Framebuffer;
-  #updateWaiters: UpdateWaiter[] = [];
+  // performance.now() of the last update that changed at least one pixel.
+  #lastChangeAt = 0;
+  #updateListeners: Array<() => void> = [];
   #failure: Error | undefined;
   #closed = false;
+  // Full-screen refreshes run one at a time (NOTES.md decision 3), so two callers never wait on the same update.
+  #refreshQueue: Promise<unknown> = Promise.resolve();
 
   private constructor(transport: Transport, serverName: string, width: number, height: number) {
     this.#transport = transport;
@@ -36,6 +37,7 @@ export class VncClient {
     const transport = await openWebSocketTransport(options.url, {
       subprotocols: vncConfig.webSocketSubprotocols,
       connectTimeoutMs: vncConfig.connectTimeoutMs,
+      maxReadBytes: vncConfig.maxReadBytes,
     });
     try {
       const init = await withTimeout(
@@ -45,6 +47,7 @@ export class VncClient {
       );
       const client = new VncClient(transport, init.name, init.width, init.height);
       void client.#readServerMessages();
+      await client.refreshScreen();
       return client;
     } catch (error) {
       transport.close();
@@ -60,22 +63,72 @@ export class VncClient {
     return this.#framebuffer.height;
   }
 
-  /** Asks for the whole screen and resolves when the server has sent it. */
-  async captureScreen(): Promise<Frame> {
-    if (this.#failure) throw this.#failure;
-    const nextUpdate = new Promise<Frame>((resolve, reject) => this.#updateWaiters.push({ resolve, reject }));
-    this.#requestUpdate(false);
-    return withTimeout(nextUpdate, vncConfig.screenshotTimeoutMs, 'Screenshot');
+  get lastChangeAt(): number {
+    return this.#lastChangeAt;
+  }
+
+  /** The screen as we know it right now. No network trip. */
+  screenshot(): Frame {
+    this.#throwIfFailed();
+    return this.#framebuffer.snapshot();
+  }
+
+  /** Asks the server to resend the whole screen and resolves after the next update. */
+  refreshScreen(): Promise<Frame> {
+    const refresh = this.#refreshQueue.then(() => this.#refreshOnce());
+    this.#refreshQueue = refresh.catch(() => undefined);
+    return refresh;
+  }
+
+  /** PointerEvent, RFC 6143 section 7.5.5. `buttons` is a mask from PointerButton. */
+  sendPointer(x: number, y: number, buttons: number): void {
+    this.#throwIfFailed();
+    const message = Buffer.alloc(6);
+    message.writeUInt8(ClientMessage.pointerEvent, 0);
+    message.writeUInt8(buttons, 1);
+    message.writeUInt16BE(x, 2);
+    message.writeUInt16BE(y, 4);
+    this.#transport.send(message);
+  }
+
+  /** KeyEvent, RFC 6143 section 7.5.4. `keysym` is an X11 keysym. */
+  sendKey(keysym: number, down: boolean): void {
+    this.#throwIfFailed();
+    const message = Buffer.alloc(8);
+    message.writeUInt8(ClientMessage.keyEvent, 0);
+    message.writeUInt8(down ? 1 : 0, 1);
+    message.writeUInt32BE(keysym, 4);
+    this.#transport.send(message);
   }
 
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
     this.#transport.close();
-    this.#failAll(new Error('VNC connection closed by us'));
+    this.#fail(new Error('VNC connection closed by us'));
+  }
+
+  async #refreshOnce(): Promise<Frame> {
+    this.#throwIfFailed();
+    const nextUpdate = this.#nextUpdate();
+    this.#requestUpdate(false);
+    await withTimeout(nextUpdate, vncConfig.screenshotTimeoutMs, 'Screen refresh');
+    return this.screenshot();
+  }
+
+  #nextUpdate(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.#updateListeners.push(() => (this.#failure ? reject(this.#failure) : resolve()));
+    });
+  }
+
+  // A browser-style WebSocket silently drops what is sent after it closes, so we refuse instead.
+  #throwIfFailed(): void {
+    if (this.#failure) throw this.#failure;
   }
 
   #requestUpdate(incremental: boolean): void {
+    if (this.#failure) return;
     const message = Buffer.alloc(10);
     message.writeUInt8(ClientMessage.framebufferUpdateRequest, 0);
     message.writeUInt8(incremental ? 1 : 0, 1);
@@ -90,7 +143,7 @@ export class VncClient {
     try {
       for (;;) await this.#readServerMessage();
     } catch (error) {
-      this.#failAll(error instanceof Error ? error : new Error(String(error)));
+      this.#fail(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -124,41 +177,58 @@ export class VncClient {
     const reader = this.#transport.reader;
     await reader.skip(1);
     const rectangleCount = await reader.readUint16();
+    let changed = false;
     for (let index = 0; index < rectangleCount; index++) {
       const x = await reader.readUint16();
       const y = await reader.readUint16();
       const width = await reader.readUint16();
       const height = await reader.readUint16();
       const encoding = await reader.readInt32();
-      await this.#readRectangle(encoding, x, y, width, height);
+      const rectangleChanged = await this.#readRectangle(encoding, x, y, width, height);
+      changed ||= rectangleChanged;
     }
-    this.#resolveWaiters();
+    if (changed) this.#lastChangeAt = performance.now();
+    this.#notifyUpdate();
+    this.#askForNextChanges(rectangleCount === 0);
   }
 
-  async #readRectangle(encoding: number, x: number, y: number, width: number, height: number): Promise<void> {
-    if (encoding === Encoding.desktopSize) {
-      this.#framebuffer.resize(width, height);
+  async #readRectangle(encoding: number, x: number, y: number, width: number, height: number): Promise<boolean> {
+    const bytesPerPixel = vncConfig.pixelFormat.bitsPerPixel / 8;
+    const reader = this.#transport.reader;
+    switch (encoding) {
+      case Encoding.raw:
+        return this.#framebuffer.paintRaw(x, y, width, height, await reader.read(width * height * bytesPerPixel));
+      case Encoding.desktopSize:
+        this.#framebuffer.resize(width, height);
+        return true;
+      case Encoding.cursor: {
+        // Pointer shape: its pixels, then a bitmask with one bit per pixel and rows padded to whole bytes.
+        const maskBytes = Math.ceil(width / 8) * height;
+        await reader.skip(width * height * bytesPerPixel + maskBytes);
+        return false;
+      }
+      default:
+        throw new Error(`Desktop sent encoding ${encoding}, which we did not ask for`);
+    }
+  }
+
+  #askForNextChanges(updateWasEmpty: boolean): void {
+    if (!updateWasEmpty) {
+      this.#requestUpdate(true);
       return;
     }
-    if (encoding !== Encoding.raw) throw new Error(`Desktop sent encoding ${encoding}, which we did not ask for`);
-    const bytesPerPixel = vncConfig.pixelFormat.bitsPerPixel / 8;
-    const pixels = await this.#transport.reader.read(width * height * bytesPerPixel);
-    this.#framebuffer.paintRaw(x, y, width, height, pixels);
+    setTimeout(() => this.#requestUpdate(true), vncConfig.emptyUpdateRetryMs).unref();
   }
 
-  #resolveWaiters(): void {
-    const waiters = this.#updateWaiters;
-    if (waiters.length === 0) return;
-    this.#updateWaiters = [];
-    const frame = this.#framebuffer.snapshot();
-    for (const waiter of waiters) waiter.resolve(frame);
+  #notifyUpdate(): void {
+    const listeners = this.#updateListeners;
+    this.#updateListeners = [];
+    for (const listener of listeners) listener();
   }
 
-  #failAll(error: Error): void {
+  #fail(error: Error): void {
     this.#failure ??= error;
     this.#transport.reader.fail(this.#failure);
-    const waiters = this.#updateWaiters;
-    this.#updateWaiters = [];
-    for (const waiter of waiters) waiter.reject(this.#failure);
+    this.#notifyUpdate();
   }
 }

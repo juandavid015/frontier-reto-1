@@ -21,6 +21,16 @@ export const ClientMessage = {
   setPixelFormat: 0,
   setEncodings: 2,
   framebufferUpdateRequest: 3,
+  keyEvent: 4,
+  pointerEvent: 5,
+} as const;
+
+// PointerEvent button mask: bit 0 is the left button; bits 3 and 4 are one wheel step up and down.
+export const PointerButton = {
+  none: 0,
+  left: 1,
+  wheelUp: 8,
+  wheelDown: 16,
 } as const;
 
 export const ServerMessage = {
@@ -33,6 +43,8 @@ export const ServerMessage = {
 export const Encoding = {
   raw: 0,
   desktopSize: -223,
+  // Section 7.8.1: the server sends the pointer's shape apart instead of painting it into the screen.
+  cursor: -239,
 } as const;
 
 export const PIXEL_FORMAT_LENGTH = 16;

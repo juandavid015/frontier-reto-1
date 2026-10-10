@@ -31,8 +31,11 @@ export class Framebuffer {
     this.#frame = blankFrame(width, height);
   }
 
-  /** Paints a raw-encoded rectangle. Pixels arrive in the format we set in config.ts. */
-  paintRaw(x: number, y: number, width: number, height: number, pixels: Buffer): void {
+  /**
+   * Paints a raw-encoded rectangle. Pixels arrive in the format we set in config.ts. Returns whether any pixel
+   * changed: servers often resend areas that look the same, and that must not count as the screen changing.
+   */
+  paintRaw(x: number, y: number, width: number, height: number, pixels: Buffer): boolean {
     const fitsOnScreen = x + width <= this.#frame.width && y + height <= this.#frame.height;
     if (!fitsOnScreen) {
       throw new Error(`Rectangle ${width}x${height} at ${x},${y} is outside the ${this.width}x${this.height} screen`);
@@ -40,15 +43,23 @@ export class Framebuffer {
     const format = vncConfig.pixelFormat;
     const bytesPerPixel = format.bitsPerPixel / 8;
     const { rgb } = this.#frame;
+    let changed = false;
     for (let row = 0; row < height; row++) {
       for (let column = 0; column < width; column++) {
         const pixel = pixels.readUInt32LE((row * width + column) * bytesPerPixel);
         const target = ((y + row) * this.#frame.width + x + column) * RGB_BYTES_PER_PIXEL;
-        rgb[target] = (pixel >>> format.redShift) & format.redMax;
-        rgb[target + 1] = (pixel >>> format.greenShift) & format.greenMax;
-        rgb[target + 2] = (pixel >>> format.blueShift) & format.blueMax;
+        const red = (pixel >>> format.redShift) & format.redMax;
+        const green = (pixel >>> format.greenShift) & format.greenMax;
+        const blue = (pixel >>> format.blueShift) & format.blueMax;
+        const differs = rgb[target] !== red || rgb[target + 1] !== green || rgb[target + 2] !== blue;
+        if (!differs) continue;
+        changed = true;
+        rgb[target] = red;
+        rgb[target + 1] = green;
+        rgb[target + 2] = blue;
       }
     }
+    return changed;
   }
 
   /** A copy, so later updates do not change a screenshot already taken. */
