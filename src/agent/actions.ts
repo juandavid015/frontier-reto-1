@@ -50,6 +50,13 @@ export const ActionSchema = z.discriminatedUnion('kind', [
     rows: z
       .array(z.object({ id: z.string().min(1), values: columnValues }))
       .describe('Every row visible now. Only its id and the columns your count checks, copied exactly as on screen'),
+    after_next: z.boolean().describe('true if your previous click was the list\'s "next page" button'),
+    total_shown: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe('The total number of records the application itself shows for this list, if it shows one'),
   }),
   z.object({
     kind: z.literal('verify_saved'),

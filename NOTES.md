@@ -277,3 +277,23 @@ Same code as run 2 (commit `4a9348d`), started before any change.
   prompts names a label or a position (searched for every menu and button name and for coordinates).
 - **What is tied to the old app is behaviour, in two places:** the prompt says to confirm a save "on screen", and the
   step history says "no visible change", which the model can read as "the save missed" and click again.
+
+### Run 4, counting fix and commit rules on v4.2 (Oct 10, 16:49, Haiku 5.5, commit `8f09435`)
+
+| Case | Type      | Result | Estado    | Steps | Cost   | Time |
+| ---- | --------- | ------ | --------- | ----- | ------ | ---- |
+| E1   | create    | pass   | terminada | 25    | $0.014 | 90 s |
+| E2   | edit      | pass   | terminada | 18    | $0.012 | 81 s |
+| E3   | question  | FAIL   | fallida   | 7     | $0.006 | 36 s |
+| E4   | export    | pass   | terminada | 14    | $0.008 | 52 s |
+| E5   | must fail | pass   | fallida   | 8     | $0.004 | 29 s |
+
+Total 4/5, **0 false successes** (run 3: 1), 0 changes outside the task, $0.044.
+
+- **The commit rules worked as designed (E1):** one commit click; the agent read the client list filtered by NIT,
+  which showed exactly one row (CL-0141, no duplicate); its first `terminada` was refused because the save was not
+  verified; it called `verify_saved` with what it read; the second was accepted.
+- **E3 failed on the reply format, not on counting:** at step 7, with the list filtered and rows about to be read,
+  Haiku sent `action` as a JSON string, then on the retry left out `observation` and `plan`. Stop reason
+  `tool_calls`, so not a cut reply. Fixed in `816642c`: a stringified action is parsed, and the two trace-only
+  fields default to empty. The counting itself is still unproven on the live app.

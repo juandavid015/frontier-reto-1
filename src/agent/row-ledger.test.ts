@@ -33,6 +33,42 @@ test('accents matter, extra spaces and column case do not', () => {
   assert.equal(ledger.count('facturas', { cliente: 'Comercial Alban' }).count, 0);
 });
 
+const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index);
+
+test('three full pages read back and forth prove nothing about the end of the list (run 5)', () => {
+  const ledger = new RowLedger();
+  ledger.record('facturas', page(range(1, 20), 'Comercial Alba'));
+  ledger.record('facturas', page(range(21, 40), 'Comercial Alba'), { afterNext: true });
+  ledger.record('facturas', page(range(41, 60), 'Comercial Alba'), { afterNext: true });
+  ledger.record('facturas', page(range(21, 40), 'Comercial Alba'), { afterNext: false });
+  ledger.record('facturas', page(range(21, 40), 'Comercial Alba'), { afterNext: false });
+  assert.equal(ledger.endOfListEvidence('facturas'), undefined);
+});
+
+test('a last page shorter than the others proves the end', () => {
+  const ledger = new RowLedger();
+  ledger.record('facturas', page(range(1, 20), 'Comercial Alba'));
+  ledger.record('facturas', page(range(21, 31), 'Comercial Alba'), { afterNext: true });
+  assert.match(ledger.endOfListEvidence('facturas') ?? '', /11 rows, shorter than the others \(20\)/);
+});
+
+test('a total shown by the app proves the end only when it equals the distinct rows read', () => {
+  const ledger = new RowLedger();
+  ledger.record('facturas', page(range(1, 20), 'Comercial Alba'), { afterNext: false, totalShown: 45 });
+  assert.equal(ledger.endOfListEvidence('facturas'), undefined);
+  ledger.record('facturas', page(range(21, 40), 'Comercial Alba'), { afterNext: true, totalShown: 40 });
+  assert.match(ledger.endOfListEvidence('facturas') ?? '', /total of 40/);
+});
+
+test('"next" showing the same rows as the page before proves the end; the same rows without "next" do not', () => {
+  const single = new RowLedger();
+  single.record('facturas', page(range(1, 7), 'Comercial Alba'));
+  single.record('facturas', page(range(1, 7), 'Comercial Alba'), { afterNext: false });
+  assert.equal(single.endOfListEvidence('facturas'), undefined);
+  single.record('facturas', page(range(1, 7), 'Comercial Alba'), { afterNext: true });
+  assert.match(single.endOfListEvidence('facturas') ?? '', /same rows again/);
+});
+
 test('a condition on a column no row has is reported, so the summary can say why the count is 0', () => {
   const ledger = new RowLedger();
   ledger.record('facturas', page([1], 'Comercial Alba'));

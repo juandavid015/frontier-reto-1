@@ -4,7 +4,9 @@ import { redact } from '../secrets/redact.ts';
 import type { Action, StepReply } from './actions.ts';
 import { CommitGuard } from './commit-guard.ts';
 import { agentConfig } from './config.ts';
+import { checkFinish, type TaskEnd } from './finish-rules.ts';
 import { RowLedger } from './row-ledger.ts';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { requestStep, type ModelUsage } from './model-client.ts';
 import { stepPrompt, systemPrompt } from './prompt.ts';
 import { Trace } from './trace.ts';
@@ -33,9 +35,9 @@ export type TaskOutcome = {
 };
 
 type Finish = Extract<Action, { kind: 'finish' }>;
-type LoopEnd = { estado: Estado; summary: string; answer?: string | undefined };
+type LoopEnd = TaskEnd;
 // What plain code remembers during one task, to enforce the rules the model might forget.
-type TaskMemory = { ledger: RowLedger; guard: CommitGuard; refusedFinishes: number };
+type TaskMemory = { ledger: RowLedger; guard: CommitGuard; refusedFinishes: number; clickedSinceLastRead: boolean };
 
 export async function runTask(input: TaskInput): Promise<TaskOutcome> {
   const startedAt = performance.now();
@@ -47,7 +49,7 @@ export async function runTask(input: TaskInput): Promise<TaskOutcome> {
   let desktop: Desktop | undefined;
   let end: LoopEnd;
   try {
-    desktop = await Desktop.connect(input.desktop);
+    desktop = await connectWithRetry(input.desktop, trace, startedAt);
     end = await agentLoop(desktop, input, trace, counters, startedAt);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -69,6 +71,22 @@ export async function runTask(input: TaskInput): Promise<TaskOutcome> {
   return outcome;
 }
 
+// A desktop that does not answer at first is retried while the clock leaves time to work (NOTES: a 3-minute outage
+// at 15:23 failed a whole eval run before step 1).
+async function connectWithRetry(desktop: TaskInput['desktop'], trace: Trace, startedAt: number): Promise<Desktop> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await Desktop.connect(desktop);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await trace.event('connect_failed', { attempt, error: message });
+      const timeLeftMs = agentConfig.taskDeadlineMs - (performance.now() - startedAt);
+      if (timeLeftMs < agentConfig.connectReserveMs) throw error;
+      await sleep(agentConfig.connectRetryDelayMs);
+    }
+  }
+}
+
 async function agentLoop(
   desktop: Desktop,
   input: TaskInput,
@@ -77,7 +95,12 @@ async function agentLoop(
   startedAt: number,
 ): Promise<LoopEnd> {
   const history: string[] = [];
-  const memory: TaskMemory = { ledger: new RowLedger(), guard: new CommitGuard(), refusedFinishes: 0 };
+  const memory: TaskMemory = {
+    ledger: new RowLedger(),
+    guard: new CommitGuard(),
+    refusedFinishes: 0,
+    clickedSinceLastRead: false,
+  };
   const system = systemPrompt(desktop.width, desktop.height);
   for (let step = 1; step <= agentConfig.maxSteps; step++) {
     if (performance.now() - startedAt > agentConfig.taskDeadlineMs) {
@@ -94,7 +117,7 @@ async function agentLoop(
     const reply = await decide(input, system, text, encodePng(frame), trace, counters, step);
     const { action } = reply;
     if (action.kind === 'finish') {
-      const decision = checkFinish(action, memory);
+      const decision = checkFinish(action, memory.ledger, memory.guard);
       await trace.event('finish', { step, action, decision });
       if (decision.accepted) return decision.end;
       memory.refusedFinishes++;
@@ -148,6 +171,7 @@ async function act(desktop: Desktop, action: Exclude<Action, Finish>, memory: Ta
   try {
     switch (action.kind) {
       case 'click':
+        memory.clickedSinceLastRead = true;
         return await click(desktop, action, memory.guard);
       case 'type':
         return describeResult(
@@ -158,8 +182,13 @@ async function act(desktop: Desktop, action: Exclude<Action, Finish>, memory: Ta
       case 'scroll':
         return describeResult(await desktop.scroll(action.x, action.y, action.direction, action.steps));
       case 'read_rows': {
-        const { added, total } = memory.ledger.record(action.table, action.rows);
-        return `recorded ${action.rows.length} rows (${added} new); "${action.table}" now has ${total} distinct rows`;
+        // "Pressed next" counts only if a click really happened since the previous read.
+        const afterNext = action.after_next && memory.clickedSinceLastRead;
+        memory.clickedSinceLastRead = false;
+        const page = { afterNext, totalShown: action.total_shown };
+        const { added, total } = memory.ledger.record(action.table, action.rows, page);
+        const evidence = memory.ledger.endOfListEvidence(action.table) ?? 'not proven yet';
+        return `recorded ${action.rows.length} rows (${added} new); "${action.table}" has ${total} distinct rows; end of list: ${evidence}`;
       }
       case 'verify_saved':
         memory.guard.markVerified();
@@ -184,28 +213,6 @@ async function click(
   if (!action.commits) return describeResult(result);
   guard.recordCommit(record, action.x, action.y);
   return `commit sent for "${record}". Do not click it again. Verify by reading the stored record (list or change log), then verify_saved`;
-}
-
-type FinishDecision = { accepted: true; end: LoopEnd } | { accepted: false; reason: string };
-
-function checkFinish(action: Finish, memory: TaskMemory): FinishDecision {
-  if (action.estado === 'fallida') return { accepted: true, end: { estado: 'fallida', summary: action.summary } };
-  const pending = memory.guard.pendingVerification;
-  if (pending) return { accepted: false, reason: `the commit on "${pending}" is not verified; read the stored record` };
-  if (!action.count)
-    return { accepted: true, end: { estado: 'terminada', summary: action.summary, answer: action.answer } };
-
-  const { table, where } = action.count;
-  const result = memory.ledger.count(table, where);
-  if (result.rowsRead === 0) return { accepted: false, reason: `no rows were read into "${table}" with read_rows` };
-  if (result.missingColumns.length > 0) {
-    return { accepted: false, reason: `no row read has the column(s) ${result.missingColumns.join(', ')}` };
-  }
-  const conditions = Object.entries(where)
-    .map(([column, value]) => `${column} = "${value}"`)
-    .join(' and ');
-  const summary = `${action.summary} Counted by code: ${result.count} of ${result.rowsRead} rows read where ${conditions}.`;
-  return { accepted: true, end: { estado: 'terminada', summary, answer: String(result.count) } };
 }
 
 // The brief: a question's answer goes on a line "respuesta: <value>". A task that fails carries no such line.

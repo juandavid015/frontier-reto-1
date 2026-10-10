@@ -1,5 +1,7 @@
 // The instructions the model sees. Generic on purpose: nothing about any one app (AGENTS.md).
 
+import { agentConfig } from './config.ts';
+
 export function systemPrompt(width: number, height: number): string {
   return `You operate a desktop business application through screenshots, like a careful new employee.
 The screen is ${width}x${height} pixels. Coordinates are pixels in the screenshot, origin at the top-left.
@@ -29,8 +31,11 @@ Rules:
      name, the state, the dates), and search. Fewer rows means fewer pages to read and less time.
   2. On every page, call read_rows with every visible row. Copy only the id and the columns your count will check,
      exactly as written; no other columns.
-  3. Go through all pages, then finish with count: {table, where}, using the exact values from the task. Keep a
-     condition in where even when a filter already applied it: code checks every row.
+  3. Go through all pages until the end of the list is proven: the last page is shorter than the others, or the
+     application shows a total (give it in total_shown), or pressing "next" shows the same rows again (read them with
+     after_next: true). Each read_rows result says whether the end is proven yet.
+  4. Then finish with count: {table, where}, using the exact values from the task. Keep a condition in where even
+     when a filter already applied it: code checks every row.
 - For any other question, put only the value in answer.
 - Finish as terminada only when the change is verified in the stored record or the answer is certain.`;
 }
@@ -42,6 +47,11 @@ export function stepPrompt(task: string, history: string[], stepNumber: number, 
 Your previous steps (oldest first):
 ${historyText}
 
-This is step ${stepNumber}. About ${secondsLeft} seconds are left; a step takes about 6. Finish before time runs
-out: an unfinished task counts as failed. The screenshot is current.`;
+This is step ${stepNumber}. The screenshot is current.${timeNotice(secondsLeft)}`;
+}
+
+// Only near the end: shown from the start, the time left made the model give up early (validation 1).
+function timeNotice(secondsLeft: number): string {
+  if (secondsLeft > agentConfig.showTimeLeftBelowSeconds) return '';
+  return ` About ${secondsLeft} seconds are left. Finish now with what you have verified; do not start a new commit.`;
 }

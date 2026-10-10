@@ -24,7 +24,12 @@ test('an action that is neither an object nor valid JSON is still rejected', () 
 });
 
 test('read_rows with rows and finish with a count are accepted', () => {
-  const rows = { kind: 'read_rows', table: 'facturas', rows: [{ id: 'INV-1', values: { cliente: 'X' } }] };
+  const rows = {
+    kind: 'read_rows',
+    table: 'facturas',
+    rows: [{ id: 'INV-1', values: { cliente: 'X' } }],
+    after_next: false,
+  };
   assert.equal(StepReplySchema.safeParse({ action: rows }).success, true);
   const finish = {
     kind: 'finish',

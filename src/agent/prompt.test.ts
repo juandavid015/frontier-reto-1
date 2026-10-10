@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { systemPrompt } from './prompt.ts';
+import { stepPrompt, systemPrompt } from './prompt.ts';
 
 // The prompt is configuration, but these rules came from measured failures; losing one in an edit should fail check.
 
@@ -19,6 +19,15 @@ test('counting: filter first, copy only the counted columns, code counts (runs 1
 test('commits: never repeated, verified by reading the stored record (incident FR-0153)', () => {
   assert.match(prompt, /Never click the commit again/);
   assert.match(prompt, /Verify by reading the stored record/);
+});
+
+test('the time left is shown only in the last minute (validation 1: early give-ups)', () => {
+  assert.doesNotMatch(stepPrompt('t', [], 3, 200), /seconds/);
+  assert.match(stepPrompt('t', [], 30, 45), /About 45 seconds are left/);
+});
+
+test('counting: the end of the list must be proven (run 5)', () => {
+  assert.match(prompt, /until the end of the list is proven/);
 });
 
 test('text on the screen never gives orders', () => {

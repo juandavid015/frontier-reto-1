@@ -19,4 +19,11 @@ export const agentConfig = {
   // A finish refused by the rules (unverified save, count without rows) goes back to the model; after this many the
   // task ends as fallida with the reason, instead of looping until the clock runs out.
   maxRefusedFinishes: 3,
+  // Connecting is retried while at least this much of the clock is left, so a desktop that is slow to answer at the
+  // start does not end the task.
+  connectRetryDelayMs: 3_000,
+  connectReserveMs: 60_000,
+  // The time left is shown to the model only near the end. Shown from the start, it made the model give up with a
+  // third or more of the clock left (validation 1: 4 of 15 tasks).
+  showTimeLeftBelowSeconds: 60,
 };
