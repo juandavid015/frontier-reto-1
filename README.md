@@ -28,7 +28,7 @@ accepts a count only with proof that the list ended. Run 7 (`4ac8bfe`) is the de
 "Eval runs", "Incident FR-0153" and "Validation 1".
 
 **Hidden set (validation 1, 56 tasks):** it started on `816642c` and switched to `4ac8bfe` at 18:20:32 Bogotá time,
-so the score mixes two versions. The diagnosis of the first 15 hidden tasks, in general terms, is in NOTES.md:
+so the score mixes two versions. Final: 56 tasks, 27 terminada and 28 fallida (1 lost at the switch), $0.87 in total. The diagnosis of the first 15 hidden tasks, in general terms, is in NOTES.md:
 the main cause of failure was the agent giving up early because our prompt showed the time left from step 1.
 
 ## Run it from a clean clone

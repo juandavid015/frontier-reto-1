@@ -392,3 +392,20 @@ tokens from summaries; identity by code (`resolve_identity`); connection retry.
   decides.
 - No rollback (decided 18:45): no evidence that `4ac8bfe` is worse than `816642c`, and these three defects are in
   both or come from a rule that also prevented wrong records.
+
+## Validation 1: final numbers (Oct 10, ended 18:43)
+
+| Version                       | Tasks | terminada | fallida | Cost   | Average time |
+| ----------------------------- | ----- | --------- | ------- | ------ | ------------ |
+| `816642c` (before the switch) | 41    | 20        | 21      | $0.658 | 96 s         |
+| `4ac8bfe` (after the switch)  | 14    | 7         | 7       | $0.211 | 76 s         |
+| Lost at the switch            | 1     |           |         |        |              |
+| **Total**                     | 56    | 27        | 28      | $0.869 |              |
+
+- The score is not known from our side: a fallida is right on a must-fail task, and the organizers check the app
+  state on their desktop. $0.016 per task.
+- After the switch: 1 false success (a date range written as one exact value in a count), 3 saves that did not store
+  (the confirmation hypothesis), 1 task named only by a document that the identity rule could not resolve. No secret
+  in any summary; the identity rule never changed a wrong record.
+- Data kept (not committed): `artifacts/validation-1/tasks-before-switch.json` (41 tasks, no summaries: our saver
+  overwrote them, and the redeploy wiped the old server's memory) and `tasks-after-switch.json` (14, with summaries).
