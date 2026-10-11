@@ -409,3 +409,31 @@ tokens from summaries; identity by code (`resolve_identity`); connection retry.
   in any summary; the identity rule never changed a wrong record.
 - Data kept (not committed): `artifacts/validation-1/tasks-before-switch.json` (41 tasks, no summaries: our saver
   overwrote them, and the redeploy wiped the old server's memory) and `tasks-after-switch.json` (14, with summaries).
+
+## Post-deadline finding: the confirmation hypothesis is proven (Oct 10, 19:52)
+
+**Proven, 3 of 3 tasks.** Traces copied read-only from the running container (14 tasks after the switch; kept in
+`artifacts/validation-1/container-traces/`, not committed). In every task where the save did not store:
+
+1. The model clicked the form's apply button with `commits: true`.
+2. The app opened a modal dialog titled "confirm changes", listing the exact change (the field, its old value and its
+   new value) with two buttons: confirm and back.
+3. The model's next action was a click on the dialog's confirm button, also flagged as a commit on the same record.
+4. Our commit guard refused it ("already saved once; never save it again"), so the dialog was abandoned and nothing
+   was stored. The model then read the record, saw the old value, and ended fallida.
+
+Seen in two edits of a single field and in one revert from the change log. The practice app saves with one click,
+which is why no practice case showed it.
+
+**Cause in our code:** the guard treats every click flagged as a commit on an already-committed record as a second
+save. A confirmation of the same pending change is not a second save; it is the second half of the first one.
+
+**Proposed fix (not built, needs a decision):** right after a commit click, if the next screen is a dialog that asks
+to confirm that same action, one confirming click is allowed and counts as the same commit. Anything else on the
+same record stays blocked. Code can check part of it: the click comes immediately after the commit, no other commit
+in between, and only once per commit. Recognising the dialog is the model's word, so the summary would record it.
+Tests: a fake screen sequence (commit, confirm allowed once; commit, confirm, confirm again refused; commit, explore,
+confirm refused).
+
+**Expected effect:** the 3 tasks after the switch and the 2 before it (tasks 13 and 14 of the first analysis) fit
+the same pattern: 5 of 56 hidden tasks. Not a deploy decision: the final battery runs on the delivered version.
